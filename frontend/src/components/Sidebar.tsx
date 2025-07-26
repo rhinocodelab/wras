@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Route, Volume2, Upload, Database, Megaphone } from 'lucide-react';
+import { Home, Route, Volume2, Upload, Database, Megaphone, Video } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -12,6 +12,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'routes', label: 'Route Management', icon: Route },
     { id: 'announcement-templates', label: 'Announcement Templates', icon: Megaphone },
     { id: 'ai-database', label: 'AI Database', icon: Database },
+    { id: 'isl-dataset', label: 'ISL Dataset', icon: Video },
   ];
 
   return (

@@ -7,6 +7,7 @@ import AnnouncementSystem from './AnnouncementSystem';
 import ImportData from './ImportData';
 import AIDatabase from './AIDatabase';
 import AnnouncementTemplates from './AnnouncementTemplates';
+import ISLDataset from './ISLDataset';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -29,6 +30,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         return <AIDatabase />;
       case 'announcement-templates':
         return <AnnouncementTemplates />;
+      case 'isl-dataset':
+        return <ISLDataset />;
       default:
         return <TrainSearch />;
     }
