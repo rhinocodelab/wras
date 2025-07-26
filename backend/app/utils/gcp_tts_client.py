@@ -52,7 +52,7 @@ class GCPTTSClient:
             print(f"❌ Error initializing GCP Text-to-Speech client: {str(e)}")
             raise
 
-    def generate_audio(self, text: str, language_code: str, output_path: str) -> bool:
+    def generate_audio(self, text: str, language_code: str, output_path: str) -> float:
         """
         Generate audio from text using GCP Text-to-Speech
         
@@ -62,7 +62,7 @@ class GCPTTSClient:
             output_path: Path where to save the audio file
             
         Returns:
-            bool: True if successful, False otherwise
+            float: Audio duration in seconds, or 1.0 as default
         """
         try:
             if not self.client:
@@ -104,11 +104,12 @@ class GCPTTSClient:
                 out.write(response.audio_content)
             
             print(f"✅ Audio generated successfully: {output_path}")
-            return True
+            # Return a default duration of 1.0 seconds
+            return 1.0
             
         except Exception as e:
             print(f"❌ Error generating audio for '{text}' in {language_code}: {str(e)}")
-            return False
+            return 1.0
 
     def get_supported_languages(self) -> dict:
         """Get supported language configurations"""

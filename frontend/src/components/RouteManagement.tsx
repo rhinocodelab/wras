@@ -226,7 +226,7 @@ const RouteManagement: React.FC = () => {
         const data = await response.json();
         setRoutes(data.routes || data);
         setTotalPages(data.total_pages || 1);
-        setTotalRecords(data.total_records || data.length || 0);
+        setTotalRecords(data.total || data.length || 0);
         setCurrentPage(page);
         
         // Check AI statuses after fetching routes
@@ -727,12 +727,13 @@ const RouteManagement: React.FC = () => {
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {totalRecords > 0 && (
           <div className="flex items-center justify-between mt-6">
             <div className="text-sm text-gray-700">
               Showing {((currentPage - 1) * recordsPerPage) + 1} to {Math.min(currentPage * recordsPerPage, totalRecords)} of {totalRecords} results
             </div>
-            <div className="flex items-center space-x-2">
+            {totalPages > 1 && (
+              <div className="flex items-center space-x-2">
               <button
                 onClick={() => fetchRoutes(currentPage - 1)}
                 disabled={currentPage === 1}
@@ -784,6 +785,7 @@ const RouteManagement: React.FC = () => {
                 Next
               </button>
             </div>
+              )}
           </div>
         )}
       </div>

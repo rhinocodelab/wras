@@ -6,6 +6,7 @@ import RouteManagement from './RouteManagement';
 import AnnouncementSystem from './AnnouncementSystem';
 import ImportData from './ImportData';
 import AIDatabase from './AIDatabase';
+import AnnouncementTemplates from './AnnouncementTemplates';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -26,6 +27,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         return <ImportData />;
       case 'ai-database':
         return <AIDatabase />;
+      case 'announcement-templates':
+        return <AnnouncementTemplates />;
       default:
         return <TrainSearch />;
     }

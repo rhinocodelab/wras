@@ -30,7 +30,24 @@ interface AudioFile {
   created_at: string;
 }
 
-type ViewMode = 'categories' | 'translations' | 'audio';
+interface AudioSegment {
+  id: number;
+  category_id: number;
+  segment_name: string;
+  segment_text: string;
+  language_code: string;
+  audio_file_path: string;
+  audio_duration: number;
+  created_at: string;
+}
+
+interface AnnouncementCategory {
+  id: number;
+  category_code: string;
+  category_name: string;
+}
+
+type ViewMode = 'categories' | 'translations' | 'audio' | 'audio_segments';
 
 const AIDatabase: React.FC = () => {
   const { showToast } = useToast();
@@ -38,6 +55,8 @@ const AIDatabase: React.FC = () => {
   const [translations, setTranslations] = useState<TranslationRecord[]>([]);
   const [routes, setRoutes] = useState<TrainRoute[]>([]);
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
+  const [audioSegments, setAudioSegments] = useState<AudioSegment[]>([]);
+  const [announcementCategories, setAnnouncementCategories] = useState<AnnouncementCategory[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
@@ -63,6 +82,20 @@ const AIDatabase: React.FC = () => {
       trainNumber: ''
     }
   );
+
+  const [audioSegmentsModal, setAudioSegmentsModal] = useState<{
+    isOpen: boolean;
+    language: string;
+    categoryId: number;
+    segments: AudioSegment[];
+    categoryName: string;
+  }>({
+    isOpen: false,
+    language: '',
+    categoryId: 0,
+    segments: [],
+    categoryName: ''
+  });
 
   const languages = [
     { code: 'all', name: 'All Languages' },
@@ -116,6 +149,38 @@ const AIDatabase: React.FC = () => {
     }
   };
 
+  const fetchAudioSegments = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch('http://localhost:5001/api/v1/audio-segments/all');
+      if (response.ok) {
+        const data = await response.json();
+        setAudioSegments(data.segments || []);
+        setTotalPages(Math.ceil((data.segments?.length || 0) / recordsPerPage));
+      } else {
+        showToast('error', 'Failed to fetch audio segments');
+      }
+    } catch (error) {
+      showToast('error', 'Error fetching audio segments: Network error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAnnouncementCategories = async () => {
+    try {
+      const response = await fetch('http://localhost:5001/api/v1/announcements/categories');
+      if (response.ok) {
+        const data = await response.json();
+        setAnnouncementCategories(data.categories || []);
+      } else {
+        showToast('error', 'Failed to fetch announcement categories');
+      }
+    } catch (error) {
+      showToast('error', 'Error fetching announcement categories: Network error');
+    }
+  };
+
   const getRouteInfo = (routeId: number) => {
     return routes.find(route => route.id === routeId);
   };
@@ -143,6 +208,28 @@ const AIDatabase: React.FC = () => {
     // Convert file path to web-accessible URL
     const fileName = filePath.split('/').pop();
     return `http://localhost:5001/audio/${fileName}`;
+  };
+
+  const getAudioSegmentUrl = (filePath: string) => {
+    // Convert file path to web-accessible URL for audio segments
+    // Remove the base path and create a relative URL
+    const relativePath = filePath.replace('/var/www/war-ddh/ai-audio-translations/', '');
+    return `http://localhost:5001/ai-audio-translations/${relativePath}`;
+  };
+
+  const getCategoryName = (categoryId: number) => {
+    const category = announcementCategories.find(cat => cat.id === categoryId);
+    return category ? category.category_name : `Category ${categoryId}`;
+  };
+
+  const getSegmentName = (segmentName: string) => {
+    const nameMap: { [key: string]: string } = {
+      'prefix': 'Prefix',
+      'from': 'From',
+      'to': 'To',
+      'suffix': 'Suffix'
+    };
+    return nameMap[segmentName] || segmentName;
   };
 
   const getTranslationText = (routeId: number, languageCode: string, audioType: string) => {
@@ -255,6 +342,36 @@ const AIDatabase: React.FC = () => {
     }
   };
 
+  const handleClearAllAudioSegments = async () => {
+    const confirmed = window.confirm(
+      '⚠️ WARNING: This action will permanently delete ALL audio segments from the database and filesystem.\n\n' +
+      'This action cannot be undone. Are you sure you want to continue?'
+    );
+    
+    if (confirmed) {
+      try {
+        setIsLoading(true);
+        const response = await fetch('http://localhost:5001/api/v1/audio-segments/clear-all', {
+          method: 'DELETE',
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          showToast('success', result.message);
+          await fetchAudioSegments(); // Refresh the data
+          setCurrentPage(1);
+        } else {
+          const errorData = await response.json();
+          showToast('error', `Failed to clear audio segments: ${errorData.detail || 'Unknown error'}`);
+        }
+      } catch (error) {
+        showToast('error', 'Error clearing audio segments: Network error');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
   const playAudio = (filePath: string) => {
     try {
       // Convert file path to web-accessible URL
@@ -273,6 +390,23 @@ const AIDatabase: React.FC = () => {
     }
   };
 
+  const playAudioSegment = (filePath: string) => {
+    try {
+      // Convert file path to web-accessible URL for audio segments
+      // The filePath from database is already relative (e.g., /announcements/arriving/en/prefix.mp3)
+      const audioUrl = `http://localhost:5001/ai-audio-translations${filePath}`;
+      
+      const audio = new Audio(audioUrl);
+      audio.play().catch(error => {
+        console.error('Error playing audio segment:', error);
+        showToast('error', 'Failed to play audio segment');
+      });
+    } catch (error) {
+      console.error('Error creating audio element:', error);
+      showToast('error', 'Failed to play audio segment');
+    }
+  };
+
   const handlePlayLanguageAudio = (langAudioFiles: AudioFile[], routeId: number) => {
     if (!langAudioFiles.length) return;
     const route = getRouteInfo(routeId);
@@ -283,6 +417,18 @@ const AIDatabase: React.FC = () => {
       audioFiles: langAudioFiles,
       routeName: route?.train_name_en || '',
       trainNumber: route?.train_number || ''
+    });
+  };
+
+  const handlePlayLanguageAudioSegments = (langSegments: AudioSegment[], categoryId: number) => {
+    if (!langSegments.length) return;
+    const categoryName = getCategoryName(categoryId);
+    setAudioSegmentsModal({
+      isOpen: true,
+      language: langSegments[0].language_code,
+      categoryId,
+      segments: langSegments,
+      categoryName
     });
   };
 
@@ -299,7 +445,9 @@ const AIDatabase: React.FC = () => {
         </button>
         <span>/</span>
         <span className="text-gray-800 font-medium">
-          {viewMode === 'translations' ? 'AI Text Translations' : 'AI Text-to-Speech'}
+          {viewMode === 'translations' ? 'AI Text Translations' : 
+           viewMode === 'audio' ? 'AI Text-to-Speech' : 
+           viewMode === 'audio_segments' ? 'AI Audio Segments' : 'Unknown'}
         </span>
       </div>
     );
@@ -382,6 +530,41 @@ const AIDatabase: React.FC = () => {
               className="w-full mt-4 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium"
             >
               View Audio Files
+            </button>
+          </div>
+        </div>
+
+        {/* AI Audio Segments Card */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                <Volume2 className="w-6 h-6 text-purple-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">AI Audio Segments</h3>
+                <p className="text-sm text-gray-600">Announcement audio segments</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Categories:</span>
+              <span className="font-medium">Arriving, Delay, Cancelled, Platform</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Features:</span>
+              <span className="font-medium">Audio segments, voice synthesis</span>
+            </div>
+            <button
+              onClick={() => {
+                setViewMode('audio_segments');
+                fetchAudioSegments();
+                fetchAnnouncementCategories();
+              }}
+              className="w-full mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+            >
+              View Audio Segments
             </button>
           </div>
         </div>
@@ -826,6 +1009,240 @@ const AIDatabase: React.FC = () => {
     );
   };
 
+  const renderAudioSegmentsView = () => {
+    // Group segments by category
+    const groupedByCategory = audioSegments.reduce((acc, segment) => {
+      if (!acc[segment.category_id]) {
+        acc[segment.category_id] = [];
+      }
+      acc[segment.category_id].push(segment);
+      return acc;
+    }, {} as Record<number, AudioSegment[]>);
+
+    // Get unique category IDs
+    const categoryIds = Object.keys(groupedByCategory).map(Number);
+
+    // Filter by search term
+    const filteredCategoryIds = categoryIds.filter(categoryId => {
+      const categoryName = getCategoryName(categoryId);
+      const segmentsForCategory = groupedByCategory[categoryId];
+      
+      return searchTerm === '' || 
+        categoryName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        segmentsForCategory.some(segment => 
+          getSegmentName(segment.segment_name).toLowerCase().includes(searchTerm.toLowerCase()) ||
+          segment.segment_text.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          segment.language_code.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    });
+
+    // Pagination
+    const paginatedCategoryIds = filteredCategoryIds.slice(
+      (currentPage - 1) * recordsPerPage,
+      currentPage * recordsPerPage
+    );
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">AI Audio Segments</h1>
+            <p className="text-gray-600 text-xs">
+              View and play AI-generated audio segments for announcement templates.
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                fetchAudioSegments();
+                fetchAnnouncementCategories();
+              }}
+              disabled={isLoading}
+              className={`px-3 py-1 text-white transition-colors text-xs font-medium w-20 h-8 ${
+                isLoading 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-purple-600 hover:bg-purple-700'
+              }`}
+            >
+              Refresh
+            </button>
+            <button
+              onClick={handleClearAllAudioSegments}
+              disabled={isLoading}
+              className={`px-3 py-1 text-white transition-colors text-xs font-medium w-20 h-8 ${
+                isLoading 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-red-600 hover:bg-red-700'
+              }`}
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <div className="flex items-center space-x-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search audio segments..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-1 border border-gray-300 focus:ring-2 focus:border-transparent h-8"
+                style={{'--tw-ring-color': '#8b5cf6'} as any}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Compact Audio Segment Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {paginatedCategoryIds.map(categoryId => {
+            const categoryName = getCategoryName(categoryId);
+            const segmentsForCategory = groupedByCategory[categoryId];
+            const englishSegments = segmentsForCategory.filter(seg => seg.language_code === 'en');
+            const otherLanguages = segmentsForCategory.filter(seg => seg.language_code !== 'en');
+            
+            return (
+              <div key={categoryId} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                {/* Header */}
+                <div className="mb-4 pb-3 border-b border-gray-200">
+                  <div className="text-lg font-bold text-purple-700">{categoryName}</div>
+                  <div className="text-sm text-gray-600">{segmentsForCategory.length} audio segments</div>
+                </div>
+                
+                {/* English Audio Segments (Default) */}
+                {englishSegments.length > 0 && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold text-gray-800">English</span>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      {englishSegments
+                        .sort((a, b) => {
+                          // Define the order: prefix, from, to, suffix
+                          const order = { prefix: 0, from: 1, to: 2, suffix: 3 };
+                          return order[a.segment_name as keyof typeof order] - order[b.segment_name as keyof typeof order];
+                        })
+                        .map(segment => (
+                        <div key={segment.id} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                          <div className="flex-1">
+                            <div className="text-xs text-gray-500">{getSegmentName(segment.segment_name)}</div>
+                            <div className="text-sm font-medium text-gray-900 line-clamp-2">
+                              {segment.segment_text}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => playAudioSegment(segment.audio_file_path)}
+                            className="ml-2 p-1 text-purple-600 hover:text-purple-800 transition-colors"
+                            title="Play audio segment"
+                          >
+                            ▶️
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Other Language Buttons */}
+                {otherLanguages.length > 0 && (
+                  <div className="pt-3 border-t border-gray-200">
+                    <div className="text-xs text-gray-500 mb-2">Other Languages:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {['hi', 'mr', 'gu'].map(lang => {
+                        const langSegments = segmentsForCategory.filter(seg => seg.language_code === lang);
+                        if (langSegments.length === 0) return null;
+                        
+                        const getLanguageText = (langCode: string) => {
+                          switch (langCode) {
+                            case 'hi': return 'हिंदी';
+                            case 'mr': return 'मराठी';
+                            case 'gu': return 'ગુજરાતી';
+                            default: return getLanguageName(langCode);
+                          }
+                        };
+                        
+                                                 return (
+                           <button
+                             key={lang}
+                             onClick={() => handlePlayLanguageAudioSegments(langSegments, categoryId)}
+                             className="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors font-medium"
+                           >
+                             {getLanguageText(lang)}
+                           </button>
+                         );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {paginatedCategoryIds.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            {isLoading ? 'Loading audio segments...' : 'No audio segments found matching your criteria.'}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {Math.ceil(filteredCategoryIds.length / recordsPerPage) > 1 && (
+          <div className="flex items-center justify-between mt-6">
+            <div className="text-sm text-gray-700">
+              Showing {((currentPage - 1) * recordsPerPage) + 1} to {Math.min(currentPage * recordsPerPage, filteredCategoryIds.length)} of {filteredCategoryIds.length} results
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className={`px-3 py-1 text-sm rounded border ${
+                  currentPage === 1
+                    ? 'text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Previous
+              </button>
+
+              {Array.from({ length: Math.min(5, Math.ceil(filteredCategoryIds.length / recordsPerPage)) }, (_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-3 py-1 text-sm rounded border ${
+                      currentPage === pageNum
+                        ? 'bg-purple-600 text-white border-purple-600'
+                        : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage === Math.ceil(filteredCategoryIds.length / recordsPerPage)}
+                className={`px-3 py-1 text-sm rounded border ${
+                  currentPage === Math.ceil(filteredCategoryIds.length / recordsPerPage)
+                    ? 'text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderTranslationModal = () => {
     if (!selectedTranslation || !isTranslationModalOpen) return null;
 
@@ -891,6 +1308,8 @@ const AIDatabase: React.FC = () => {
     fetchTranslations();
     fetchRoutes();
     fetchAudioFiles();
+    fetchAudioSegments();
+    fetchAnnouncementCategories();
   }, []);
 
   return (
@@ -900,6 +1319,7 @@ const AIDatabase: React.FC = () => {
       {viewMode === 'categories' && renderCategories()}
       {viewMode === 'translations' && renderTranslationsView()}
       {viewMode === 'audio' && renderAudioView()}
+      {viewMode === 'audio_segments' && renderAudioSegmentsView()}
       
       {renderTranslationModal()}
       {audioModal.isOpen && (
@@ -932,6 +1352,88 @@ const AIDatabase: React.FC = () => {
                     onClick={() => playAudio(audioFile.audio_file_path)}
                     className="ml-2 p-1 text-green-600 hover:text-green-800 transition-colors"
                     title="Play audio"
+                  >
+                    ▶️
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {audioSegmentsModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">
+                {getLanguageName(audioSegmentsModal.language)} Audio Segments
+              </h3>
+              <button
+                onClick={() => setAudioSegmentsModal(m => ({ ...m, isOpen: false }))}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mb-2 text-xs text-gray-500">
+              {audioSegmentsModal.categoryName}
+            </div>
+            
+            {/* Complete Sentence Preview */}
+            <div className="mb-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+              <div className="text-xs text-purple-600 font-medium mb-1">Complete Announcement:</div>
+              <div className="text-sm text-gray-800">
+                {audioSegmentsModal.segments
+                  .sort((a, b) => {
+                    const order = { prefix: 0, from: 1, to: 2, suffix: 3 };
+                    return order[a.segment_name as keyof typeof order] - order[b.segment_name as keyof typeof order];
+                  })
+                  .map(segment => segment.segment_text)
+                  .join(' ')}
+              </div>
+            </div>
+            
+            {/* Play All Button */}
+            <div className="mb-4">
+              <button
+                onClick={() => {
+                  const sortedSegments = audioSegmentsModal.segments.sort((a, b) => {
+                    const order = { prefix: 0, from: 1, to: 2, suffix: 3 };
+                    return order[a.segment_name as keyof typeof order] - order[b.segment_name as keyof typeof order];
+                  });
+                  
+                  sortedSegments.forEach((segment, index) => {
+                    setTimeout(() => {
+                      playAudioSegment(segment.audio_file_path);
+                    }, index * 1000); // 1 second delay between segments
+                  });
+                }}
+                className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium flex items-center justify-center space-x-2"
+              >
+                <span>🎵</span>
+                <span>Play Complete Announcement</span>
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              {audioSegmentsModal.segments
+                .sort((a, b) => {
+                  // Define the order: prefix, from, to, suffix
+                  const order = { prefix: 0, from: 1, to: 2, suffix: 3 };
+                  return order[a.segment_name as keyof typeof order] - order[b.segment_name as keyof typeof order];
+                })
+                .map(segment => (
+                <div key={segment.id} className="flex items-center justify-between p-2 bg-gray-50 rounded border">
+                  <div className="flex-1">
+                    <div className="text-xs text-gray-500">{getSegmentName(segment.segment_name)}</div>
+                    <div className="text-sm font-medium text-gray-900 line-clamp-2">
+                      {segment.segment_text}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => playAudioSegment(segment.audio_file_path)}
+                    className="ml-2 p-1 text-purple-600 hover:text-purple-800 transition-colors"
+                    title="Play audio segment"
                   >
                     ▶️
                   </button>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Route, Volume2, Upload, Database } from 'lucide-react';
+import { Home, Route, Volume2, Upload, Database, Megaphone } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: string;
@@ -10,13 +10,12 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'routes', label: 'Route Management', icon: Route },
-    { id: 'announcements', label: 'Announcements', icon: Volume2 },
-    { id: 'import', label: 'Import Data', icon: Upload },
     { id: 'ai-database', label: 'AI Database', icon: Database },
+    { id: 'announcement-templates', label: 'Announcement Templates', icon: Megaphone },
   ];
 
   return (
-    <div className="w-64 bg-gray-50 border-r border-gray-200">
+    <div className="w-72 bg-gray-50 border-r border-gray-200">
       <div className="p-6">
         <nav className="space-y-2">
           {menuItems.map((item) => {
@@ -41,8 +40,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
           })}
         </nav>
       </div>
-
-
     </div>
   );
 };
