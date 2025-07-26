@@ -49,7 +49,23 @@ interface AnnouncementCategory {
   updated_at: string;
 }
 
-type ViewMode = 'categories' | 'translations' | 'audio' | 'audio_segments';
+interface AudioTemplate {
+  id: string;
+  template_id: string;
+  original_text: string;
+  text_en: string;
+  text_hi: string;
+  text_mr: string;
+  text_gu: string;
+  audio_en_path: string;
+  audio_hi_path: string;
+  audio_mr_path: string;
+  audio_gu_path: string;
+  created_at: string;
+  status: 'generating' | 'completed' | 'failed';
+}
+
+type ViewMode = 'categories' | 'translations' | 'audio' | 'audio_segments' | 'audio_templates';
 
 const AIDatabase: React.FC = () => {
   const { showToast } = useToast();
@@ -60,6 +76,7 @@ const AIDatabase: React.FC = () => {
   const [audioSegments, setAudioSegments] = useState<AudioSegment[]>([]);
   const [announcementCategories, setAnnouncementCategories] = useState<AnnouncementCategory[]>([]);
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
+  const [audioTemplates, setAudioTemplates] = useState<AudioTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
@@ -190,6 +207,20 @@ const AIDatabase: React.FC = () => {
     } catch (error) {
       console.error('Categories fetch exception:', error);
       showToast('error', 'Error fetching announcement categories: Network error');
+    }
+  };
+
+  const fetchAudioTemplates = async () => {
+    try {
+      const response = await fetch('http://localhost:5001/api/v1/audio-templates/');
+      if (response.ok) {
+        const data = await response.json();
+        setAudioTemplates(data.templates || []);
+      } else {
+        console.error('Failed to fetch audio templates');
+      }
+    } catch (error) {
+      console.error('Error fetching audio templates:', error);
     }
   };
 
@@ -360,32 +391,54 @@ const AIDatabase: React.FC = () => {
   };
 
   const handleClearAllAudioSegments = async () => {
-    const confirmed = window.confirm(
-      '⚠️ WARNING: This action will permanently delete ALL audio segments from the database and filesystem.\n\n' +
-      'This action cannot be undone. Are you sure you want to continue?'
-    );
-    
-    if (confirmed) {
-      try {
-        setIsLoading(true);
-        const response = await fetch('http://localhost:5001/api/v1/audio-segments/clear-all', {
-          method: 'DELETE',
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          showToast('success', result.message);
-          await fetchAudioSegments(); // Refresh the data
-          setCurrentPage(1);
-        } else {
-          const errorData = await response.json();
-          showToast('error', `Failed to clear audio segments: ${errorData.detail || 'Unknown error'}`);
-        }
-      } catch (error) {
-        showToast('error', 'Error clearing audio segments: Network error');
-      } finally {
-        setIsLoading(false);
+    if (!window.confirm('Are you sure you want to clear all audio segments? This action cannot be undone.')) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch('http://localhost:5001/api/v1/audio-segments/clear', {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        showToast('success', 'All audio segments cleared successfully');
+        await fetchAudioSegments();
+        setCurrentPage(1);
+      } else {
+        showToast('error', 'Failed to clear audio segments');
       }
+    } catch (error) {
+      console.error('Error clearing audio segments:', error);
+      showToast('error', 'Error clearing audio segments');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleClearAllAudioTemplates = async () => {
+    if (!window.confirm('Are you sure you want to clear all audio templates? This will remove all generated audio files and cannot be undone.')) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await fetch('http://localhost:5001/api/v1/audio-templates/clear', {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        showToast('success', 'All audio templates cleared successfully');
+        await fetchAudioTemplates();
+        setCurrentPage(1);
+      } else {
+        showToast('error', 'Failed to clear audio templates');
+      }
+    } catch (error) {
+      console.error('Error clearing audio templates:', error);
+      showToast('error', 'Error clearing audio templates');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -464,7 +517,8 @@ const AIDatabase: React.FC = () => {
         <span className="text-gray-800 font-medium">
           {viewMode === 'translations' ? 'AI Text Translations' : 
            viewMode === 'audio' ? 'AI Text-to-Speech' : 
-           viewMode === 'audio_segments' ? 'AI Audio Segments' : 'Unknown'}
+           viewMode === 'audio_segments' ? 'AI Audio Segments' : 
+           viewMode === 'audio_templates' ? 'AI Generated Audio Templates' : 'Unknown'}
         </span>
       </div>
     );
@@ -582,6 +636,40 @@ const AIDatabase: React.FC = () => {
               className="w-full mt-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
             >
               View Audio Segments
+            </button>
+          </div>
+        </div>
+
+        {/* AI Generated Audio Templates Card */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                <Volume2 className="w-6 h-6 text-orange-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">AI Generated Audio Templates</h3>
+                <p className="text-sm text-gray-600">Custom audio template generation</p>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Templates:</span>
+              <span className="font-medium">{audioTemplates.length} generated</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-600">Features:</span>
+              <span className="font-medium">Custom text, translations, TTS</span>
+            </div>
+            <button
+              onClick={() => {
+                setViewMode('audio_templates');
+                fetchAudioTemplates();
+              }}
+              className="w-full mt-4 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
+            >
+              View Audio Templates
             </button>
           </div>
         </div>
@@ -1262,6 +1350,218 @@ const AIDatabase: React.FC = () => {
     );
   };
 
+  const renderAudioTemplatesView = () => {
+    // Filter templates by search term
+    const filteredTemplates = audioTemplates.filter(template => {
+      return (
+        searchTerm === '' ||
+        template.original_text.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        template.template_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        template.text_en.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        template.text_hi.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        template.text_mr.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        template.text_gu.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    });
+
+    // Pagination
+    const paginatedTemplates = filteredTemplates.slice((currentPage - 1) * recordsPerPage, currentPage * recordsPerPage);
+
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 mb-2">AI Generated Audio Templates</h1>
+            <p className="text-gray-600 text-xs">
+              View all AI-generated audio templates with translations and TTS audio.
+            </p>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                fetchAudioTemplates();
+                setCurrentPage(1);
+              }}
+              disabled={isLoading}
+              className={`px-3 py-1 text-white transition-colors text-xs font-medium w-20 h-8 ${
+                isLoading 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-orange-600 hover:bg-orange-700'
+              }`}
+              title="Refresh audio templates"
+            >
+              {isLoading ? 'Refreshing...' : 'Refresh'}
+            </button>
+            <button
+              onClick={handleClearAllAudioTemplates}
+              disabled={isLoading}
+              className={`px-3 py-1 text-white transition-colors text-xs font-medium w-20 h-8 ${
+                isLoading 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : 'bg-red-600 hover:bg-red-700'
+              }`}
+              title="Clear all audio templates"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        {/* Search and Filter */}
+        <div className="flex items-center space-x-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search templates by text, ID, or translations..."
+                value={searchTerm}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:border-orange-500 focus:outline-none text-sm"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Templates List */}
+        {paginatedTemplates.length === 0 ? (
+          <div className="text-center py-12">
+            <Volume2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No audio templates found</h3>
+            <p className="text-gray-600">
+              {searchTerm ? 'Try adjusting your search terms.' : 'No audio templates have been generated yet.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {paginatedTemplates.map((template) => (
+              <div key={template.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-1">
+                      Template: {template.template_id}
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-2">{template.original_text}</p>
+                    <p className="text-xs text-gray-500">
+                      Created: {new Date(template.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    {template.status === 'generating' && (
+                      <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                        Generating...
+                      </span>
+                    )}
+                    {template.status === 'completed' && (
+                      <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                        Completed
+                      </span>
+                    )}
+                    {template.status === 'failed' && (
+                      <span className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded-full">
+                        Failed
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Audio Files Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { code: 'en', name: 'English', text: template.text_en, audio: template.audio_en_path },
+                    { code: 'hi', name: 'Hindi', text: template.text_hi, audio: template.audio_hi_path },
+                    { code: 'mr', name: 'Marathi', text: template.text_mr, audio: template.audio_mr_path },
+                    { code: 'gu', name: 'Gujarati', text: template.text_gu, audio: template.audio_gu_path }
+                  ].map((lang) => (
+                    <div key={lang.code} className="border border-gray-200 rounded p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-gray-700">
+                          {lang.name}
+                        </span>
+                        <div className="flex space-x-1">
+                          {lang.audio && (
+                            <button
+                              onClick={() => {
+                                const audio = new Audio(`http://localhost:5001${lang.audio}`);
+                                audio.play().catch(error => {
+                                  console.error('Error playing audio:', error);
+                                  alert('Error playing audio file');
+                                });
+                              }}
+                              className="p-1 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                              title="Play Audio"
+                            >
+                              ▶️
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-600 line-clamp-2">{lang.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {Math.ceil(filteredTemplates.length / recordsPerPage) > 1 && (
+          <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+            <div className="text-sm text-gray-600">
+              Showing {((currentPage - 1) * recordsPerPage) + 1} to {Math.min(currentPage * recordsPerPage, filteredTemplates.length)} of {filteredTemplates.length} templates
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className={`px-3 py-1 text-sm rounded border ${
+                  currentPage === 1
+                    ? 'text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Previous
+              </button>
+
+              {Array.from({ length: Math.min(5, Math.ceil(filteredTemplates.length / recordsPerPage)) }, (_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`px-3 py-1 text-sm rounded border ${
+                      currentPage === pageNum
+                        ? 'bg-orange-600 text-white border-orange-600'
+                        : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage === Math.ceil(filteredTemplates.length / recordsPerPage)}
+                className={`px-3 py-1 text-sm rounded border ${
+                  currentPage === Math.ceil(filteredTemplates.length / recordsPerPage)
+                    ? 'text-gray-400 border-gray-200 cursor-not-allowed'
+                    : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderTranslationModal = () => {
     if (!selectedTranslation || !isTranslationModalOpen) return null;
 
@@ -1329,6 +1629,7 @@ const AIDatabase: React.FC = () => {
     fetchAudioFiles();
     fetchAudioSegments();
     fetchAnnouncementCategories();
+    fetchAudioTemplates();
   }, []);
 
   return (
@@ -1339,6 +1640,7 @@ const AIDatabase: React.FC = () => {
       {viewMode === 'translations' && renderTranslationsView()}
       {viewMode === 'audio' && renderAudioView()}
       {viewMode === 'audio_segments' && renderAudioSegmentsView()}
+      {viewMode === 'audio_templates' && renderAudioTemplatesView()}
       
       {renderTranslationModal()}
       {audioModal.isOpen && (

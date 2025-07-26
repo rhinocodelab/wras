@@ -11,6 +11,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'routes', label: 'Route Management', icon: Route },
     { id: 'announcement-templates', label: 'Announcement Templates', icon: Megaphone },
+    { id: 'audio-templates', label: 'Audio Templates', icon: Volume2 },
     { id: 'ai-database', label: 'AI Database', icon: Database },
     { id: 'isl-dataset', label: 'ISL Dataset', icon: Video },
   ];

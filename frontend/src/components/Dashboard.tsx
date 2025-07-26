@@ -7,6 +7,7 @@ import AnnouncementSystem from './AnnouncementSystem';
 import ImportData from './ImportData';
 import AIDatabase from './AIDatabase';
 import AnnouncementTemplates from './AnnouncementTemplates';
+import AudioTemplates from './AudioTemplates';
 import ISLDataset from './ISLDataset';
 
 interface DashboardProps {
@@ -30,6 +31,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         return <AIDatabase />;
       case 'announcement-templates':
         return <AnnouncementTemplates />;
+      case 'audio-templates':
+        return <AudioTemplates />;
       case 'isl-dataset':
         return <ISLDataset />;
       default:

@@ -30,6 +30,12 @@ try:
 except Exception as e:
     print(f"Warning: Could not mount ISL videos directory: {e}")
 
+# Mount static files for audio templates
+try:
+    app.mount("/audio-templates", StaticFiles(directory="/var/www/war-ddh/audio-templates"), name="audio-templates")
+except Exception as e:
+    print(f"Warning: Could not mount audio templates directory: {e}")
+
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
