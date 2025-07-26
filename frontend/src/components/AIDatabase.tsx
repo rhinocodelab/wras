@@ -44,7 +44,9 @@ interface AudioSegment {
 interface AnnouncementCategory {
   id: number;
   category_code: string;
-  category_name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
 }
 
 type ViewMode = 'categories' | 'translations' | 'audio' | 'audio_segments';
@@ -57,6 +59,7 @@ const AIDatabase: React.FC = () => {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
   const [audioSegments, setAudioSegments] = useState<AudioSegment[]>([]);
   const [announcementCategories, setAnnouncementCategories] = useState<AnnouncementCategory[]>([]);
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
@@ -169,14 +172,23 @@ const AIDatabase: React.FC = () => {
 
   const fetchAnnouncementCategories = async () => {
     try {
+      console.log('Fetching announcement categories...');
       const response = await fetch('http://localhost:5001/api/v1/announcements/categories');
+      console.log('Categories response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('Categories data:', data);
         setAnnouncementCategories(data.categories || []);
+        setCategoriesLoaded(true);
+        console.log('Set categories:', data.categories || []);
       } else {
+        const errorText = await response.text();
+        console.error('Categories fetch error:', errorText);
         showToast('error', 'Failed to fetch announcement categories');
       }
     } catch (error) {
+      console.error('Categories fetch exception:', error);
       showToast('error', 'Error fetching announcement categories: Network error');
     }
   };
@@ -218,8 +230,13 @@ const AIDatabase: React.FC = () => {
   };
 
   const getCategoryName = (categoryId: number) => {
+    console.log('Getting category name for ID:', categoryId);
+    console.log('Available categories:', announcementCategories);
     const category = announcementCategories.find(cat => cat.id === categoryId);
-    return category ? category.category_name : `Category ${categoryId}`;
+    console.log('Found category:', category);
+    const result = category ? category.category_code : `Category ${categoryId}`;
+    console.log('Returning category name:', result);
+    return result;
   };
 
   const getSegmentName = (segmentName: string) => {
@@ -1108,7 +1125,9 @@ const AIDatabase: React.FC = () => {
               <div key={categoryId} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 {/* Header */}
                 <div className="mb-4 pb-3 border-b border-gray-200">
-                  <div className="text-lg font-bold text-purple-700">{categoryName}</div>
+                  <div className="text-lg font-bold text-purple-700">
+                    {categoriesLoaded ? categoryName : `Loading Category ${categoryId}...`}
+                  </div>
                   <div className="text-sm text-gray-600">{segmentsForCategory.length} audio segments</div>
                 </div>
                 

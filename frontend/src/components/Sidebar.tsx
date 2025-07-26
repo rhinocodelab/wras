@@ -10,8 +10,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'routes', label: 'Route Management', icon: Route },
-    { id: 'ai-database', label: 'AI Database', icon: Database },
     { id: 'announcement-templates', label: 'Announcement Templates', icon: Megaphone },
+    { id: 'ai-database', label: 'AI Database', icon: Database },
   ];
 
   return (
