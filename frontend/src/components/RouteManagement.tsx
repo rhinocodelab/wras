@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Search } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Languages, Volume2 } from 'lucide-react';
 import RouteModal from './RouteModal';
 import ImportModal from './ImportModal';
 import { useToast } from './ToastContainer';
@@ -16,9 +16,16 @@ interface Route {
   updated_at?: string;
 }
 
+interface RouteStatus {
+  routeId: number;
+  hasTextTranslation: boolean;
+  hasAudioTranslation: boolean;
+}
+
 const RouteManagement: React.FC = () => {
   const { showToast } = useToast();
   const [routes, setRoutes] = useState<Route[]>([]);
+  const [routeStatuses, setRouteStatuses] = useState<RouteStatus[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRoute, setEditingRoute] = useState<Route | null>(null);
@@ -48,6 +55,83 @@ const RouteManagement: React.FC = () => {
   const [totalRecords, setTotalRecords] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const recordsPerPage = 7;
+
+  // Check AI translation and audio status for all routes
+  const checkRouteStatuses = async () => {
+    try {
+      const [translationsResponse, audioResponse] = await Promise.all([
+        fetch('http://localhost:5001/api/v1/translate/all'),
+        fetch('http://localhost:5001/api/v1/audio/files/')
+      ]);
+
+      const translationsData = translationsResponse.ok ? await translationsResponse.json() : { translations: [] };
+      const audioData = audioResponse.ok ? await audioResponse.json() : { audio_files: [] };
+
+      const statuses: RouteStatus[] = routes.map(route => {
+        const hasTextTranslation = translationsData.translations?.some((t: any) => t.train_route_id === route.id) || false;
+        const hasAudioTranslation = audioData.audio_files?.some((a: any) => a.train_route_id === route.id) || false;
+        
+        return {
+          routeId: route.id,
+          hasTextTranslation,
+          hasAudioTranslation
+        };
+      });
+
+      setRouteStatuses(statuses);
+    } catch (error) {
+      console.error('Error checking route statuses:', error);
+    }
+  };
+
+  // Get status for a specific route
+  const getRouteStatus = (routeId: number): RouteStatus | undefined => {
+    return routeStatuses.find(status => status.routeId === routeId);
+  };
+
+  // Generate individual AI Text Translation
+  const handleGenerateIndividualTranslation = async (routeId: number) => {
+    try {
+      const response = await fetch(`http://localhost:5001/api/v1/translate/generate/${routeId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (response.ok) {
+        showToast('success', 'AI Text Translation generated successfully!');
+        await checkRouteStatuses(); // Refresh statuses
+      } else {
+        const errorData = await response.json();
+        showToast('error', `Failed to generate translation: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      showToast('error', 'Error generating AI Text Translation');
+    }
+  };
+
+  // Generate individual AI Audio Translation
+  const handleGenerateIndividualAudio = async (routeId: number) => {
+    try {
+      const response = await fetch(`http://localhost:5001/api/v1/audio/generate/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          train_route_id: routeId, 
+          languages: ['en', 'hi', 'mr', 'gu'] 
+        })
+      });
+
+      if (response.ok) {
+        showToast('success', 'AI Audio Translation generated successfully!');
+        await checkRouteStatuses(); // Refresh statuses
+      } else {
+        const errorData = await response.json();
+        showToast('error', `Failed to generate audio: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      showToast('error', 'Error generating AI Audio Translation');
+    }
+  };
 
   const getButtonColor = () => {
     switch (selectedAction) {
@@ -136,19 +220,24 @@ const RouteManagement: React.FC = () => {
 
   const fetchRoutes = async (page: number = 1) => {
     try {
-      const skip = (page - 1) * recordsPerPage;
-      const response = await fetch(`http://localhost:5001/api/v1/train-routes/?skip=${skip}&limit=${recordsPerPage}`);
+      setIsRefreshing(true);
+      const response = await fetch(`http://localhost:5001/api/v1/train-routes/?page=${page}&limit=${recordsPerPage}`);
       if (response.ok) {
         const data = await response.json();
         setRoutes(data.routes || data);
-        setTotalRecords(data.total || data.length);
-        setTotalPages(Math.ceil((data.total || data.length) / recordsPerPage));
+        setTotalPages(data.total_pages || 1);
+        setTotalRecords(data.total_records || data.length || 0);
         setCurrentPage(page);
+        
+        // Check AI statuses after fetching routes
+        await checkRouteStatuses();
       } else {
-        showToast('error', `Failed to fetch routes: ${response.statusText}`);
+        showToast('error', 'Failed to fetch routes');
       }
     } catch (error) {
       showToast('error', 'Error fetching routes: Network error');
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -221,15 +310,8 @@ const RouteManagement: React.FC = () => {
   };
 
   const handleRefreshRoutes = async () => {
-    try {
-      setIsRefreshing(true);
-      await fetchRoutes(currentPage);
-      showToast('success', 'Routes refreshed successfully');
-    } catch (error) {
-      showToast('error', 'Error refreshing routes: Network error');
-    } finally {
-      setIsRefreshing(false);
-    }
+    await fetchRoutes(currentPage);
+    await checkRouteStatuses();
   };
 
   const handleClearAllRoutes = async () => {
@@ -404,6 +486,18 @@ const RouteManagement: React.FC = () => {
     }
   }, [searchTerm]);
 
+  // Check route statuses when routes change
+  useEffect(() => {
+    if (routes.length > 0) {
+      checkRouteStatuses();
+    }
+  }, [routes]);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchRoutes(1);
+  }, []);
+
   const filteredRoutes = routes.filter(route =>
     route.train_name_en.toLowerCase().includes(searchTerm.toLowerCase()) ||
     route.train_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -504,65 +598,124 @@ const RouteManagement: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   End Station
                 </th>
-
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  AI Status
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredRoutes.map((route) => (
-                <tr key={route.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="font-mono text-sm font-medium text-gray-900">
-                      {route.train_number}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {route.train_name_en}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {route.start_station_en}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {route.start_station_code}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">
-                      {route.end_station_en}
-                    </div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {route.end_station_code}
-                    </div>
-                  </td>
-
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex justify-end space-x-2">
-                      <button
-                        onClick={() => {
-                          setEditingRoute(route);
-                          setIsModalOpen(true);
-                        }}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Edit route"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRoute(route.id)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete route"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredRoutes.map((route) => {
+                const status = getRouteStatus(route.id);
+                return (
+                  <tr key={route.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="font-mono text-sm font-medium text-gray-900">
+                        {route.train_number}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        {route.train_name_en}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {route.start_station_en}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {route.start_station_code}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {route.end_station_en}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {route.end_station_code}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center">
+                      <div className="flex flex-col items-center space-y-1">
+                        {/* AI Text Translation Status */}
+                        <div className="flex items-center space-x-1">
+                          <Languages className="w-3 h-3 text-blue-600" />
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            status?.hasTextTranslation 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {status?.hasTextTranslation ? '✓' : '✗'}
+                          </span>
+                        </div>
+                        {/* AI Audio Translation Status */}
+                        <div className="flex items-center space-x-1">
+                          <Volume2 className="w-3 h-3 text-green-600" />
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            status?.hasAudioTranslation 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {status?.hasAudioTranslation ? '✓' : '✗'}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex justify-end space-x-1">
+                        {/* Individual AI Text Translation Button */}
+                        <button
+                          onClick={() => handleGenerateIndividualTranslation(route.id)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            status?.hasTextTranslation
+                              ? 'text-green-600 hover:bg-green-50'
+                              : 'text-blue-600 hover:bg-blue-50'
+                          }`}
+                          title={status?.hasTextTranslation ? 'Regenerate AI Text Translation' : 'Generate AI Text Translation'}
+                        >
+                          <Languages className="w-4 h-4" />
+                        </button>
+                        
+                        {/* Individual AI Audio Translation Button */}
+                        <button
+                          onClick={() => handleGenerateIndividualAudio(route.id)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            status?.hasAudioTranslation
+                              ? 'text-green-600 hover:bg-green-50'
+                              : 'text-green-600 hover:bg-green-50'
+                          }`}
+                          title={status?.hasAudioTranslation ? 'Regenerate AI Audio Translation' : 'Generate AI Audio Translation'}
+                        >
+                          <Volume2 className="w-4 h-4" />
+                        </button>
+                        
+                        {/* Edit Button */}
+                        <button
+                          onClick={() => {
+                            setEditingRoute(route);
+                            setIsModalOpen(true);
+                          }}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit route"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        
+                        {/* Delete Button */}
+                        <button
+                          onClick={() => handleDeleteRoute(route.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete route"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
