@@ -287,6 +287,193 @@ class AudioSegmentService:
             "total_generated": len(all_generated_segments)
         }
 
+    async def generate_segments_for_all_categories_with_delays(self, db: Session, languages: List[str], overwrite_existing: bool = False, delay_between_requests: int = 2000, delay_between_categories: int = 5000) -> Dict:
+        """Generate audio segments for all categories with delays to ensure proper audio quality"""
+        try:
+            import asyncio
+            print("🎵 Starting bulk audio segment generation with delays...")
+            print(f"   Delay between requests: {delay_between_requests}ms")
+            print(f"   Delay between categories: {delay_between_categories}ms")
+            
+            categories = db.query(AnnouncementCategory).all()
+            total_generated = 0
+            categories_processed = []
+            failed_categories = []
+            
+            for i, category in enumerate(categories):
+                try:
+                    print(f"\n🔄 Processing category {i+1}/{len(categories)}: {category.category_code}")
+                    
+                    # Generate segments for this category with delays
+                    result = await self.generate_segments_for_category_with_delays(
+                        db=db,
+                        category_id=category.id,
+                        languages=languages,
+                        overwrite_existing=overwrite_existing,
+                        delay_between_requests=delay_between_requests
+                    )
+                    
+                    total_generated += result['total_generated']
+                    categories_processed.append(category.category_code)
+                    print(f"✅ Completed category: {category.category_code}")
+                    
+                    # Add delay between categories (except for the last one)
+                    if i < len(categories) - 1:
+                        print(f"⏳ Waiting {delay_between_categories/1000}s before next category...")
+                        await asyncio.sleep(delay_between_categories / 1000)
+                    
+                except Exception as e:
+                    print(f"❌ Failed to process category {category.category_code}: {str(e)}")
+                    failed_categories.append(category.category_code)
+            
+            print(f"\n🎉 Bulk generation with delays completed!")
+            print(f"   Total generated: {total_generated}")
+            print(f"   Categories processed: {len(categories_processed)}")
+            print(f"   Failed categories: {len(failed_categories)}")
+            
+            return {
+                'total_generated': total_generated,
+                'categories_processed': categories_processed,
+                'failed_categories': failed_categories
+            }
+            
+        except Exception as e:
+            print(f"❌ Error in bulk generation with delays: {str(e)}")
+            return {
+                'total_generated': 0,
+                'categories_processed': [],
+                'failed_categories': []
+            }
+
+    async def generate_segments_for_category_with_delays(self, db: Session, category_id: int, languages: List[str], overwrite_existing: bool = False, delay_between_requests: int = 2000) -> Dict:
+        """Generate audio segments for a category with delays between requests"""
+        try:
+            import asyncio
+            print(f"🎵 Generating segments for category {category_id} with delays...")
+            
+            category = db.query(AnnouncementCategory).filter(AnnouncementCategory.id == category_id).first()
+            if not category:
+                raise ValueError(f"Category {category_id} not found")
+            
+            total_generated = 0
+            generated_segments = []
+            failed_segments = []
+            
+            # Create category directory
+            category_dir = os.path.join(self.base_audio_path, category.category_code)
+            os.makedirs(category_dir, exist_ok=True)
+            
+            for language in languages:
+                try:
+                    print(f"   🔄 Processing language: {language}")
+                    
+                    # Create language directory
+                    language_dir = os.path.join(category_dir, language)
+                    os.makedirs(language_dir, exist_ok=True)
+                    
+                    # Get segments for this category and language
+                    if category.category_code not in self.segment_translations or language not in self.segment_translations[category.category_code]:
+                        print(f"      ⚠️ No translations found for {category.category_code}/{language}")
+                        continue
+                    
+                    segments = self.segment_translations[category.category_code][language]
+                    
+                    for segment_name, segment_text in segments.items():
+                        try:
+                            # Check if file already exists and overwrite is disabled
+                            audio_file_path = os.path.join(language, f"{segment_name}.mp3")
+                            full_audio_path = os.path.join(category_dir, audio_file_path)
+                            
+                            if os.path.exists(full_audio_path) and not overwrite_existing:
+                                print(f"      ⏭️ Skipping {segment_name} (already exists)")
+                                continue
+                            
+                            print(f"      🎤 Generating audio for: {segment_name}")
+                            
+                            # Check if segment already exists
+                            existing_segment = db.query(AnnouncementAudioSegment).filter(
+                                AnnouncementAudioSegment.category_id == category_id,
+                                AnnouncementAudioSegment.segment_name == segment_name,
+                                AnnouncementAudioSegment.language_code == language
+                            ).first()
+
+                            if existing_segment and not overwrite_existing:
+                                print(f"      ⏭️ Skipping existing segment: {segment_name}")
+                                continue
+
+                            # Generate audio file path
+                            audio_filename = f"{segment_name}.mp3"
+                            audio_file_path = os.path.join(language_dir, audio_filename)
+                            relative_path = f"/announcements/{category.category_code}/{language}/{audio_filename}"
+
+                            # Generate audio using TTS
+                            audio_duration = self.tts_client.generate_audio(
+                                text=segment_text,
+                                language_code=language,
+                                output_path=audio_file_path
+                            )
+                            
+                            if audio_duration:
+                                # Save to database
+                                if existing_segment:
+                                    existing_segment.audio_file_path = relative_path
+                                    existing_segment.audio_duration = audio_duration
+                                    existing_segment.segment_text = segment_text
+                                    db.commit()
+                                    generated_segments.append(existing_segment)
+                                else:
+                                    new_segment = AnnouncementAudioSegment(
+                                        category_id=category_id,
+                                        segment_name=segment_name,
+                                        segment_text=segment_text,
+                                        language_code=language,
+                                        audio_file_path=relative_path,
+                                        audio_duration=audio_duration
+                                    )
+                                    db.add(new_segment)
+                                    db.commit()
+                                    db.refresh(new_segment)
+                                    generated_segments.append(new_segment)
+                                
+                                total_generated += 1
+                                print(f"      ✅ Generated: {segment_name}")
+                                
+                                # Add delay between requests
+                                if delay_between_requests > 0:
+                                    await asyncio.sleep(delay_between_requests / 1000)
+                                
+                            else:
+                                failed_segments.append(f"{segment_name} ({language})")
+                                print(f"      ❌ Failed to generate: {segment_name}")
+                                
+                        except Exception as e:
+                            failed_segments.append(f"{segment_name} ({language})")
+                            print(f"      ❌ Error generating {segment_name}: {str(e)}")
+                    
+                    print(f"   ✅ Completed language: {language}")
+                    
+                except Exception as e:
+                    print(f"   ❌ Error processing language {language}: {str(e)}")
+                    failed_segments.append(f"language_{language}")
+            
+            print(f"🎉 Category {category.category_code} completed!")
+            print(f"   Generated: {total_generated}")
+            print(f"   Failed: {len(failed_segments)}")
+            
+            return {
+                'total_generated': total_generated,
+                'generated_segments': generated_segments,
+                'failed_segments': failed_segments
+            }
+            
+        except Exception as e:
+            print(f"❌ Error generating segments for category {category_id}: {str(e)}")
+            return {
+                'total_generated': 0,
+                'generated_segments': [],
+                'failed_segments': [str(e)]
+            }
+
     def delete_segments_for_category(self, db: Session, category_id: int) -> bool:
         """Delete all audio segments for a category"""
         segments = self.get_segments_for_category(db, category_id)

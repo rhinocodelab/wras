@@ -149,41 +149,47 @@ const AnnouncementTemplates: React.FC = () => {
     setIsTranslationModalOpen(true);
     setTranslationProgress({
       isTranslating: true,
-      currentStep: 'Starting translation generation...',
+      currentStep: 'Starting seed database translation generation...',
       totalCategories: categories.length,
       translatedCategories: 0,
       failedCategories: 0
     });
 
     try {
-      const response = await fetch('http://localhost:5001/api/v1/announcements/generate-translations/', {
+      // Call the seed database script endpoint
+      const response = await fetch('http://localhost:5001/api/v1/announcements/seed-translations/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ languages: ['hi', 'mr', 'gu'], overwrite_existing: false })
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (response.ok) {
         const result = await response.json();
         setTranslationProgress(prev => ({
           ...prev,
-          translatedCategories: result.total_categories,
-          currentStep: 'Translation generation completed successfully!',
+          translatedCategories: result.total_categories || categories.length,
+          currentStep: 'Seed database translation generation completed successfully!',
           isTranslating: false
         }));
-        showToast('success', `Generated ${result.total_translations_generated} translations across ${result.total_categories} categories.`);
+        showToast('success', `Generated translations using seed database script for ${result.total_categories || categories.length} categories.`);
+        
+        // Refresh the categories and templates to show the new translations
+        await fetchCategories();
+        if (selectedCategory) {
+          await fetchTemplates(selectedCategory.id);
+        }
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to generate translations');
+        throw new Error(errorData.detail || 'Failed to generate translations using seed database');
       }
     } catch (error) {
       setTranslationProgress(prev => ({
         ...prev,
         isTranslating: false,
         failedCategories: 1,
-        currentStep: 'Translation generation failed. Please try again.'
+        currentStep: 'Seed database translation generation failed. Please try again.'
       }));
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      showToast('error', `Failed to generate translations: ${errorMessage}`);
+      showToast('error', `Failed to generate translations using seed database: ${errorMessage}`);
     }
   };
 
@@ -191,7 +197,7 @@ const AnnouncementTemplates: React.FC = () => {
     setIsAudioModalOpen(true);
     setAudioProgress({
       isGenerating: true,
-      currentStep: 'Starting audio segment generation...',
+      currentStep: 'Starting audio segment generation with delays...',
       totalCategories: categories.length,
       generatedCategories: 0,
       failedCategories: 0,
@@ -200,10 +206,15 @@ const AnnouncementTemplates: React.FC = () => {
     });
 
     try {
-      const response = await fetch('http://localhost:5001/api/v1/audio-segments/generate-bulk', {
+      const response = await fetch('http://localhost:5001/api/v1/audio-segments/generate-bulk-with-delays', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ languages: ['en', 'hi', 'mr', 'gu'], overwrite_existing: false })
+        body: JSON.stringify({ 
+          languages: ['en', 'hi', 'mr', 'gu'], 
+          overwrite_existing: false,
+          delay_between_requests: 2000, // 2 seconds delay between requests
+          delay_between_categories: 5000  // 5 seconds delay between categories
+        })
       });
 
       if (response.ok) {
@@ -215,7 +226,7 @@ const AnnouncementTemplates: React.FC = () => {
           currentStep: 'Audio segment generation completed successfully!',
           isGenerating: false
         }));
-        showToast('success', `Generated ${result.total_segments_generated} audio segments across ${result.total_categories} categories.`);
+        showToast('success', `Generated ${result.total_segments_generated} audio segments across ${result.total_categories} categories with proper delays.`);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Failed to generate audio segments');
@@ -350,17 +361,27 @@ const AnnouncementTemplates: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
         <div className="mb-4">
           <label className="block text-xs font-medium text-gray-700 mb-1">Select Announcement Category</label>
-          <select
-            value={selectedCategoryCode}
-            onChange={(e) => handleCategoryChange(e.target.value)}
-            className="w-40 px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
-          >
-            {categories.map((category) => (
-              <option key={category.id} value={category.category_code}>
-                {getCategoryDisplayName(category.category_code)}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center space-x-2">
+            <select
+              value={selectedCategoryCode}
+              onChange={(e) => handleCategoryChange(e.target.value)}
+              className="w-40 px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+            >
+              {categories.map((category) => (
+                <option key={category.id} value={category.category_code}>
+                  {getCategoryDisplayName(category.category_code)}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleGenerateTranslations}
+              disabled={isLoading}
+              className="px-3 py-1.5 bg-orange-600 text-white hover:bg-orange-700 transition-colors text-xs font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+              title="Generate translations for all categories using seed database script"
+            >
+              Seed Translations
+            </button>
+          </div>
         </div>
 
         {/* Templates Display */}
@@ -673,7 +694,7 @@ const AnnouncementTemplates: React.FC = () => {
                   )}
                 </div>
                 <h2 className="text-xl font-bold text-gray-800 mb-2">
-                  {translationProgress.isTranslating ? 'Generating AI Translations' : 'Translation Complete'}
+                  {translationProgress.isTranslating ? 'Running Seed Database Script' : 'Seed Database Complete'}
                 </h2>
                 <p className="text-sm text-gray-600">
                   {translationProgress.currentStep}
@@ -709,7 +730,7 @@ const AnnouncementTemplates: React.FC = () => {
               )}
 
               <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Translating to:</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Using seed_database.sh script to generate:</h3>
                 <div className="flex justify-center space-x-4 text-xs text-gray-600">
                   <span>Hindi</span>
                   <span>Marathi</span>
@@ -746,7 +767,7 @@ const AnnouncementTemplates: React.FC = () => {
                   )}
                 </div>
                 <h2 className="text-xl font-bold text-gray-800 mb-2">
-                  {audioProgress.isGenerating ? 'Generating AI Audio Segments' : 'Audio Segment Generation Complete'}
+                  {audioProgress.isGenerating ? 'Generating AI Audio Segments with Delays' : 'Audio Segment Generation Complete'}
                 </h2>
                 <p className="text-sm text-gray-600">
                   {audioProgress.currentStep}
@@ -786,12 +807,15 @@ const AnnouncementTemplates: React.FC = () => {
               )}
 
               <div className="mb-6">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Generating audio segments for:</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Generating audio segments with delays for:</h3>
                 <div className="flex justify-center space-x-4 text-xs text-gray-600">
                   <span>English</span>
                   <span>Hindi</span>
                   <span>Marathi</span>
                   <span>Gujarati</span>
+                </div>
+                <div className="text-center mt-2 text-xs text-gray-500">
+                  <p>2s delay between requests • 5s delay between categories</p>
                 </div>
               </div>
 

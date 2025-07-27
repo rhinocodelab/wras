@@ -66,6 +66,37 @@ async def generate_audio_segments_bulk(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate audio segments: {str(e)}")
 
+@router.post("/generate-bulk-with-delays", response_model=AudioSegmentBulkGenerationResponse)
+async def generate_audio_segments_bulk_with_delays(
+    request: AudioSegmentBulkGenerationRequest,
+    db: Session = Depends(get_db)
+):
+    """Generate audio segments for all categories with delays to ensure proper audio quality"""
+    try:
+        import asyncio
+        
+        # Extract delay parameters from request
+        delay_between_requests = getattr(request, 'delay_between_requests', 2000)  # Default 2 seconds
+        delay_between_categories = getattr(request, 'delay_between_categories', 5000)  # Default 5 seconds
+        
+        result = await audio_segment_service.generate_segments_for_all_categories_with_delays(
+            db=db,
+            languages=request.languages,
+            overwrite_existing=request.overwrite_existing,
+            delay_between_requests=delay_between_requests,
+            delay_between_categories=delay_between_categories
+        )
+        
+        return AudioSegmentBulkGenerationResponse(
+            message=f"Generated {result['total_generated']} audio segments across {len(result['categories_processed'])} categories with proper delays",
+            total_segments_generated=result['total_generated'],
+            total_categories=len(result['categories_processed']),
+            categories_processed=result['categories_processed'],
+            failed_categories=result['failed_categories']
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate audio segments with delays: {str(e)}")
+
 @router.get("/all", response_model=GetAudioSegmentsResponse)
 async def get_all_audio_segments(
     db: Session = Depends(get_db)

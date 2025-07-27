@@ -44,6 +44,8 @@ class GetAudioSegmentsResponse(BaseModel):
 class AudioSegmentBulkGenerationRequest(BaseModel):
     languages: List[str] = ["en", "hi", "mr", "gu"]
     overwrite_existing: bool = False
+    delay_between_requests: Optional[int] = 2000  # milliseconds
+    delay_between_categories: Optional[int] = 5000  # milliseconds
 
 class AudioSegmentBulkGenerationResponse(BaseModel):
     message: str

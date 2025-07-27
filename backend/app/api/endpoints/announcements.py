@@ -235,4 +235,52 @@ def initialize_categories_and_templates(db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error initializing categories and templates: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error initializing categories and templates: {str(e)}")
+
+@router.post("/seed-translations/")
+def seed_translations_using_script(db: Session = Depends(get_db)):
+    """Run seed_database.sh script to generate translations"""
+    try:
+        import subprocess
+        import os
+        
+        # Get the backend directory path
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        script_path = os.path.join(backend_dir, "seed_database.sh")
+        
+        # Check if script exists
+        if not os.path.exists(script_path):
+            raise HTTPException(status_code=404, detail="seed_database.sh script not found")
+        
+        # Make script executable
+        os.chmod(script_path, 0o755)
+        
+        # Run the script
+        result = subprocess.run(
+            [script_path],
+            capture_output=True,
+            text=True,
+            cwd=backend_dir,
+            env={**os.environ, 'PYTHONPATH': backend_dir}
+        )
+        
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500, 
+                detail=f"Script execution failed: {result.stderr}"
+            )
+        
+        # Get the number of categories from database
+        categories = announcement_service.get_all_categories(db)
+        
+        return {
+            "success": True,
+            "total_categories": len(categories),
+            "message": "Seed database script executed successfully",
+            "script_output": result.stdout
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error running seed database script: {str(e)}") 

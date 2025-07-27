@@ -14,5 +14,6 @@ pytest-asyncio
 httpx
 pandas
 openpyxl
+setuptools
 google-cloud-translate==3.11.1
 google-cloud-texttospeech==2.16.3 
